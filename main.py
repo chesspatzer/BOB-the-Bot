@@ -26,6 +26,7 @@ messages = collection.messages
 domain = collection.domain
 verification = collection.verification
 emailUserMap = collection.emailUserMap
+userEmailMap = collection.userEmailMap
 
 prefix = "$$"
 intents = discord.Intents.default()
@@ -46,73 +47,86 @@ validDomains = {}
 
 @bot.event
 async def on_ready():
-    print('Hannibal Pondy Bot is ready')
+    print('Hannibal Pondy Venu Bot is ready')
 
 
 @bot.command(name="ping")
 async def ping(ctx):
     dict_object = {
-        'test': 'I am the VTF Bot, my eyes are everywhere, i am watching you O.O, you will be warned if you dont provide timely updates',
+        'test': 'Thanks for checking on me ' + ctx.author.name + ', I am alive, up and running fine so dw.',
         '_id': ctx.author.id
     }
-    for x in (messages.find()):
-        await ctx.send(x)
+    await ctx.send('Thanks for checking on me ' + ctx.author.name + ', I am alive, up and running fine so dw.')
+
+
+@bot.command(name="helpme")
+async def helpme(ctx):
+    await ctx.send(
+        'Hello, If you are a northeastern university student, type the command **$$requestOTP <EmailId>**. Eg : **$$requestOTP   patzerpunda@northeastern.edu** Purdue students can tag Raushan to get your external role updated, others can tag the mods to get your admits verified.')
 
 
 # TODO: verify server domain later (regex)
 @bot.command(name="settings")
 async def settings(ctx, domainName, addRoles, removeRoles, verificationMessage):
-    add, remove = addRoles.strip().split(','), removeRoles.strip().split(',')
-    dict_object = {
-        '_id': ctx.guild.id,
-        'domain': str(domainName),
-        'add': add,
-        'remove': remove,
-        'message': verificationMessage
-    }
-    response = domain.save(dict_object)
-    if response:
-        validDomains[ctx.guild.id] = str(domainName)
-    await ctx.send(response)
+    if discord.utils.get(ctx.guild.roles, name='admin') in ctx.author.roles:
+        add, remove = addRoles.strip().split(','), removeRoles.strip().split(',')
+        dict_object = {
+            '_id': ctx.guild.id,
+            'domain': str(domainName),
+            'add': add,
+            'remove': remove,
+            'message': verificationMessage
+        }
+        response = domain.save(dict_object)
+        if response:
+            validDomains[ctx.guild.id] = str(domainName)
+        await ctx.send("The requested settings have been updated successfully.")
+    else:
+        await ctx.send("The command you are trying to execute is way above your pay grade!!!")
+
+
 
 
 @bot.command(name="requestOTP")
-async def requestOTP(ctx, emailID):
+async def requestOTP(ctx, emailID=""):
     domainName = getDomain(ctx)
-    if domainName is None:
-        await ctx.send("Admins, please set the domain of your server before verifying")
+    if len(emailID) == 0:
+        await ctx.send("Invalid synatx. Correct command syntax : **" + prefix + "requestOTP  <email id> eg: $$requestOTP  test@"+domainName+"**")
     else:
-        if domainName == emailID[len(emailID) - len(domainName):]:
-            emailMapper = emailUserMap.find_one({'_id': emailID}, {'userID': True})
-            if emailMapper is not None and emailMapper['userID'] != str(ctx.guild.id) + '_' + str(ctx.author.id):
-                await ctx.send("This email address has already been mapped to another user here, please contact admin "
-                               "in case of any issues.")
-            else:
-                otp = otpgen()
-                dict_object = {
-                    '_id': str(ctx.guild.id) + '_' + str(ctx.author.id),
-                    'timestamp': datetime.datetime.now(),
-                    'otp': otp,
-                    'email': emailID
-                }
-                verification.save(dict_object)
-                msg = MIMEMultipart()
-                msg['From'] = 'nuverifier@gmail.com'
-                msg['To'] = emailID
-                index = domainName.index('.')
-                msg['Subject'] = domainName[:index] + ' discord verification OTP'
-                msg.attach(MIMEText("Your OTP is : " + otp, 'plain'))
-                server = smtplib.SMTP('smtp.gmail.com', 587)
-                server.starttls()
-                server.login(credentials['emailID'], credentials['emailPassword'])
-                server.sendmail(credentials['emailID'], emailID, msg.as_string())
-                server.quit()
-
-                await ctx.send("Your OTP has been sent to your " + domainName[
-                                                                   :index] + " email address, please check all folders (including spam) in your email inbox. Enter **" + prefix + "verifyOTP <enter otp> ** to get verified")
+        if domainName is None:
+            await ctx.send("Admins, please set the domain of your server before verifying")
         else:
-            await ctx.send(
-                'This email domain is invalid for the server, please use a valid ' + domainName + ' email address for verification')
+            if domainName == emailID[len(emailID) - len(domainName):]:
+                userMapper = userEmailMap.find_one({'serverID': str(ctx.guild.id) , 'email': emailID}, {'userID': True})
+                if userMapper is not None and userMapper['userID'] != str(ctx.author.id):
+                    await ctx.send("This email address has already been mapped to another user here, please contact admin "
+                                   "in case of any issues.")
+                else:
+                    otp = otpgen()
+                    dict_object = {
+                        '_id': str(ctx.guild.id) + '_' + str(ctx.author.id),
+                        'timestamp': datetime.datetime.now(),
+                        'otp': otp,
+                        'email': emailID
+                    }
+                    verification.save(dict_object)
+                    msg = MIMEMultipart()
+                    msg['From'] = 'nuverifier@gmail.com'
+                    msg['To'] = emailID
+                    index = domainName.index('.')
+                    msg['Subject'] = domainName[:index] + ' discord verification OTP'
+                    msg.attach(MIMEText("Your OTP is : " + otp, 'plain'))
+                    server = smtplib.SMTP('smtp.gmail.com', 587)
+                    server.starttls()
+                    server.login(credentials['emailID'], credentials['emailPassword'])
+                    server.sendmail(credentials['emailID'], emailID, msg.as_string())
+                    server.quit()
+
+                    await ctx.send("Your OTP has been sent to your " + domainName[
+                                                                       :index] + " email address, please check all folders (including spam) in your email inbox. Enter **" + prefix + "verifyOTP <enter otp> ** to get verified. Eg: **$$verifyOTP 123456**")
+            else:
+                await ctx.send(
+                    'This email domain is invalid for the server, please use a valid ' + domainName + ' email address for verification')
 
 
 @bot.command(name="verifyOTP")
@@ -136,19 +150,29 @@ async def verifyOTP(ctx, OTP):
                 # else is executed only when OTP matches
                 response = domain.find_one({'_id': ctx.guild.id}, {'add': True, 'remove': True, 'message': True})
                 for role_plus in response['add']:
+                    if role_plus is None or len(role_plus) == 0:
+                        continue
                     await ctx.author.add_roles(discord.utils.get(ctx.guild.roles, name=role_plus))
                 for role_minus in response['remove']:
+                    if role_minus is None or len(role_minus) == 0:
+                        continue
                     await ctx.author.remove_roles(discord.utils.get(ctx.guild.roles, name=role_minus))
                 if response['message']:
                     await ctx.author.send(response['message'])
                 else:
                     await ctx.author.send("You have been successfully verified, you should have access to other "
                                           "channels of the server now")
-                dict_object = {
-                    '_id': userOTP['email'],
-                    'userID': str(ctx.guild.id) + '_' + str(ctx.author.id)
-                }
-                emailUserMap.save(dict_object)
+                await ctx.send("Verification is successful for " + ctx.author.name)
+                try:
+                    dict_object = {
+                        'email': userOTP['email'],
+                        'userID': str(ctx.author.id),
+                        'serverID':str(ctx.guild.id),
+                        'userCompositeID': str(ctx.guild.id) + '_' + str(ctx.author.id)
+                    }
+                    userEmailMap.save(dict_object)
+                except :
+                    print(dict_object)
 
 
 def getDomain(ctx):
@@ -166,82 +190,64 @@ def otpgen():
     return otp
 
 
-@bot.command(name="populateVTF")
-async def populateVTF(ctx):
-    memberlist.clear
-    for member in ctx.guild.members:
-        for role in member.roles:
-            if role.name == 'Visa Task Force':
-                memberlist.append(member)
-    await ctx.channel.send(memberlist)
-
-
-# real method
-@bot.command(name="updateVTF")
-async def updateVTF(ctx):
-    messages = await ctx.channel.history(limit=None, after=lastweek).flatten()
-    # print(messages)
-    for msg in messages:
-        print(msg)
-        print("**")
-        print(msg.author.name)
-        print("_____________")
-        messagelist.append(msg.author)
-        # print(messagelist)
-
-
 @bot.command(name="violators")
 async def violators(ctx):
-    violators = list(set(filter(lambda val: val not in messagelist, memberlist)))
-    for violator in violators:
-        await ctx.channel.send(violator.mention + ' is a violator')
+    if discord.utils.get(ctx.guild.roles, name='admin') in ctx.author.roles:
+        violators = list(set(filter(lambda val: val not in messagelist, memberlist)))
+        for violator in violators:
+            await ctx.channel.send(violator.mention + ' is a violator')
+    else:
+        await ctx.send("A wise man once said, don't ask question you don't want to know the answers to.")
 
 
 @bot.command(name="identifyViolators")
 async def detectViolators(ctx, args):
-    print("started")
-    print(args)
-    start = datetime.datetime.now()
-    memberlist.clear()
-    messagelist.clear()
-    for member in ctx.guild.members:
-        for role in member.roles:
-            if role.name == 'Visa Task Force':
-                memberlist.append(member)
+    if discord.utils.get(ctx.guild.roles, name='admin') in ctx.author.roles:
+        print("started")
+        print(args)
+        start = datetime.datetime.now()
+        memberlist.clear()
+        messagelist.clear()
+        for member in ctx.guild.members:
+            for role in member.roles:
+                if role.name == 'Visa Task Force':
+                    memberlist.append(member)
 
-    visa_slot_availability_channel = discord.utils.get(ctx.guild.channels, name='visa-slot-availability')
-    print(visa_slot_availability_channel)
+        visa_slot_availability_channel = discord.utils.get(ctx.guild.channels, name='visa-slot-availability')
+        print(visa_slot_availability_channel)
 
-    visa_recruitment_channel = discord.utils.get(ctx.guild.channels, name='vtf-recruitment')
-    print(visa_recruitment_channel)
+        visa_recruitment_channel = discord.utils.get(ctx.guild.channels, name='vtf-recruitment')
+        print(visa_recruitment_channel)
 
-    mod_channel = discord.utils.get(ctx.guild.channels, name='mod-channel')
-    print(mod_channel)
+        mod_channel = discord.utils.get(ctx.guild.channels, name='mod-channel')
+        print(mod_channel)
 
-    timeframe = datetime.datetime.now() - datetime.timedelta(days=int(args))
+        timeframe = datetime.datetime.now() - datetime.timedelta(days=int(args))
 
-    messages = await visa_slot_availability_channel.history(limit=None, after=timeframe).flatten()
+        messages = await visa_slot_availability_channel.history(limit=None, after=timeframe).flatten()
 
-    counter = 0
-    for msg in messages:
-        counter += 1
-        messagelist.append(msg.author)
-    print(counter)
+        counter = 0
+        for msg in messages:
+            counter += 1
+            messagelist.append(msg.author)
+        print(counter)
 
-    violators = list(set(memberlist) - set(messagelist))
-    print(len(violators))
-    if violators == [] or violators == None:
-        await ctx.channel.send('there are no violators')
+        violators = list(set(memberlist) - set(messagelist))
+        print(len(violators))
+        if violators == [] or violators == None:
+            await ctx.channel.send('there are no violators')
+        else:
+            for violator in violators:
+                await visa_recruitment_channel.send(
+                    violator.mention + ' has not updated in the last ' + args + ' days. This is a warning. Update ASAP to avoid being removed from the task force.')
+            await mod_channel.send(str(len(violators)) + ' have been warned')
+
+        print("completed")
+        end = datetime.datetime.now()
+        time = end - start
+        print(time.total_seconds())
     else:
-        for violator in violators:
-            await visa_recruitment_channel.send(
-                violator.mention + ' has not updated in the last ' + args + ' days. This is a warning. Update ASAP to avoid being removed from the task force.')
-        await mod_channel.send(str(len(violators)) + ' have been warned')
-
-    print("completed")
-    end = datetime.datetime.now()
-    time = end - start
-    print(time.total_seconds())
+        await ctx.send("A wise man once said, don't ask question you don't want to know the answers to.")
 
 
 bot.run(credentials['token'])
