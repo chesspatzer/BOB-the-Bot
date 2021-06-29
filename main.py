@@ -1,22 +1,19 @@
-# Press the green button in the gutter to run the script.
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
 
+import random as r
+import re
+import smtplib
+from email.mime.multipart import MIMEMultipart
 # IMPORT DISCORD.PY. ALLOWS ACCESS TO DISCORD'S API.
 # vtf-recruitment
-import smtplib
 from email.mime.text import MIMEText
 
 import discord
-import os
 import pymongo
-from pymongo import MongoClient
 from discord.ext import commands
-import random as r
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from configs import credentials
 
+from config import credentials, emojiLocal
+from games.connect4 import ConnectFour
 client = pymongo.MongoClient(
     'mongodb://' + credentials['username'] + ":" + credentials['password'] + credentials['database'])
 db = client.test
@@ -27,8 +24,9 @@ domain = collection.domain
 verification = collection.verification
 emailUserMap = collection.emailUserMap
 userEmailMap = collection.userEmailMap
+emojiDict = collection.emojiDict
 
-prefix = "$$"
+prefix = "##"
 intents = discord.Intents.default()
 intents.members = True
 
@@ -52,10 +50,6 @@ async def on_ready():
 
 @bot.command(name="ping")
 async def ping(ctx):
-    dict_object = {
-        'test': 'Thanks for checking on me ' + ctx.author.name + ', I am alive, up and running fine so dw.',
-        '_id': ctx.author.id
-    }
     await ctx.send('Thanks for checking on me ' + ctx.author.name + ', I am alive, up and running fine so dw.')
 
 
@@ -249,5 +243,76 @@ async def detectViolators(ctx, args):
     else:
         await ctx.send("A wise man once said, don't ask question you don't want to know the answers to.")
 
+
+@bot.command(name="c4settings")
+async def c4settings(ctx, addEmojis):
+    emojis = addEmojis.strip().split(',')
+    for emoji in emojis:
+        if emojiDict.find_one({'emoji': str(emoji)}) is not None:
+            dict_object = {'emoji' : str(emoji)}
+            emojiDict.save(dict_object)
+    await ctx.send(addEmojis)
+
+
+@bot.command(name="challenge")
+async def challenge(ctx, competitor):
+    m = await ctx.send( ctx.author.name + " has challenged"  + competitor + "to a match")
+    competitor = await getUser(ctx,competitor)
+    await m.add_reaction(emojiLocal['ACCEPT'])
+    await m.add_reaction(emojiLocal['DENY'])
+    game = ConnectFour(ctx,ctx.author,competitor)
+    try:
+        def check(reactions, users):
+            print("testing")
+            return users.id == competitor.id and str(reactions) in [emojiLocal['ACCEPT'], emojiLocal['DENY']]
+        reaction, user = await ctx.bot.wait_for('reaction_add', check=check, timeout=45)
+        if str(reaction) == emojiLocal['ACCEPT']:
+            await ctx.send("Challenge accepted")
+            emojiMessage = await ctx.send("Player 1 " + game.player1.name +" please react to this message to choose your emoji")
+            def checkplayer1(reactions, users):
+                return users.id == ctx.author.id
+            def checkplayer2(reactions, users):
+                return users.id == competitor.id
+            reaction, user = await ctx.bot.wait_for('reaction_add', check=checkplayer1, timeout=45)
+            game.player1Emoji = reaction
+            await ctx.send("Set Player1's emoji as "+ str(game.player1Emoji))
+            emojiMessage = await ctx.send("Player 2 " + game.player2.name + " please react to this message to choose your emoji")
+            reaction, user = await ctx.bot.wait_for('reaction_add', check=checkplayer2, timeout=45)
+            game.player2Emoji = reaction
+            await ctx.send("Set Player2's emoji as "+ str(game.player2Emoji))
+            await ctx.send(game.display_current_grid())
+            while game.gameover != True:
+                await movePlayer(checkplayer1, ctx, game)
+                await ctx.send(game.display_current_grid())
+                if game.gameover == True:
+                    await ctx.send(game.player1.name + " wins")
+                    break
+                await movePlayer(checkplayer2, ctx, game)
+                await ctx.send(game.display_current_grid())
+                if game.gameover == True:
+                    await ctx.send(game.player2.name +" wins")
+                    break
+
+        else:
+            await ctx.send("Challenge denied")
+    except Exception as E:
+        await ctx.send("The challenge request has timed out!" + str(E))
+
+
+async def movePlayer(checkplayer, ctx, game):
+    playerReaction = await ctx.send("Turn:" + game.currentPlayer.name + "\n Please react to the message  ")
+    for emoji in game.emoji_dict:
+        await playerReaction.add_reaction(emoji)
+    reaction, user = await ctx.bot.wait_for('reaction_add', check=checkplayer, timeout=45)
+    currentBoard = game.make_move(reaction.emoji)
+
+
+async def getUser(ctx, comp):
+    regex_id = re.search(r"^<@!?(\d+)>$", comp)
+    try:
+        id = int(regex_id.group(1))
+        return await ctx.bot.fetch_user(id)
+    except:
+        return None
 
 bot.run(credentials['token'])
